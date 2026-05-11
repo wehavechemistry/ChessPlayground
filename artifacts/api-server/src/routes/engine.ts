@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { Chess } from "chess.js";
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import path from "path";
 
 const router = Router();
@@ -20,16 +21,35 @@ router.post("/move", async (req, res) => {
     (turn !== "w" && turn !== "b") ||
     typeof botFile !== "string"
   ) {
-    res.status(400).json({ error: "Invalid request body" });
+    res.status(400).json({ error: "Invalid request body — required: fen (string), moves (array), turn ('w'|'b'), botFile (string)" });
     return;
   }
 
-  if (!botFile || /[/\\.]/.test(botFile.replace(/\.py$/, ""))) {
-    res.status(400).json({ error: "Invalid bot file name" });
+  const safeName = botFile.replace(/\.py$/, "");
+  if (!safeName || /[/\\.]/.test(safeName)) {
+    res.status(400).json({ error: `Invalid bot file name: "${botFile}"` });
     return;
   }
 
-  const chess = new Chess(fen);
+  const botsDir = path.join(process.cwd(), "bots");
+  const fileName = botFile.endsWith(".py") ? botFile : `${botFile}.py`;
+  const botPath = path.join(botsDir, fileName);
+
+  if (!existsSync(botPath)) {
+    res.status(404).json({
+      error: `Bot file not found: "${fileName}". Place your .py file in artifacts/api-server/bots/.`,
+    });
+    return;
+  }
+
+  let chess: Chess;
+  try {
+    chess = new Chess(fen);
+  } catch {
+    res.status(400).json({ error: `Invalid FEN: "${fen}"` });
+    return;
+  }
+
   const legalMoves = chess
     .moves({ verbose: true })
     .map((m) => m.from + m.to + (m.promotion ?? ""));
@@ -42,16 +62,30 @@ router.post("/move", async (req, res) => {
     time_ms: timeMs,
   });
 
-  const botsDir = path.join(process.cwd(), "bots");
-  const fileName = botFile.endsWith(".py") ? botFile : `${botFile}.py`;
-  const botPath = path.join(botsDir, fileName);
-
   try {
-    const bestmove = await runBot(botPath, payload, timeMs + 3000);
+    const bestmove = await runBot(botPath, payload, timeMs + 5000);
+
+    if (bestmove === "") {
+      res.json({ bestmove: "" });
+      return;
+    }
+
+    if (!legalMoves.includes(bestmove)) {
+      const sample = legalMoves.slice(0, 5).join(", ");
+      const more = legalMoves.length > 5 ? `… (${legalMoves.length} total)` : "";
+      req.log.warn({ bestmove, botFile, fen }, "Bot returned illegal move");
+      res.status(422).json({
+        error: `Bot returned illegal move "${bestmove}". Legal: ${sample}${more}`,
+      });
+      return;
+    }
+
     res.json({ bestmove });
   } catch (err) {
     req.log.error({ err, botFile }, "Bot execution failed");
-    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
+    res.status(500).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 
@@ -64,7 +98,7 @@ function runBot(botPath: string, payload: string, timeoutMs: number): Promise<st
       fn();
     };
 
-    const proc = spawn("python3", [botPath]);
+    const proc = spawn("python3", [botPath], { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
 
@@ -83,15 +117,27 @@ function runBot(botPath: string, payload: string, timeoutMs: number): Promise<st
         return;
       }
       if (code !== 0) {
-        settle(() => reject(new Error(`Bot exited ${code}: ${stderr.slice(0, 300)}`)));
+        const stderrSnip = stderr.slice(0, 400).trim();
+        const detail = stderrSnip ? `\n${stderrSnip}` : "";
+        settle(() => reject(new Error(`Bot exited with code ${code}${detail}`)));
         return;
       }
       try {
-        const result = JSON.parse(stdout.trim()) as { bestmove?: string };
-        if (!result.bestmove) throw new Error("No bestmove field in bot output");
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          settle(() => reject(new Error("Bot produced no output")));
+          return;
+        }
+        const result = JSON.parse(trimmed) as { bestmove?: string };
+        if (result.bestmove == null) {
+          settle(() => reject(new Error("Bot output missing 'bestmove' field")));
+          return;
+        }
         settle(() => resolve(result.bestmove!));
       } catch {
-        settle(() => reject(new Error(`Invalid bot output: ${stdout.slice(0, 100)}`)));
+        settle(() =>
+          reject(new Error(`Bot output is not valid JSON: ${stdout.slice(0, 120)}`))
+        );
       }
     });
 

@@ -1,8 +1,15 @@
-import { useState } from "react";
-import type { Square, PieceSymbol } from "@/lib/chess-engine";
+import { AlertCircle, Trash2, RotateCcw } from "lucide-react";
+import type { PieceSymbol } from "@/lib/chess-engine";
 import type { GameActions } from "@/hooks/useChessGame";
 
-const PIECES: Array<{ symbol: string; type: PieceSymbol; color: "w" | "b"; label: string }> = [
+export interface EditorPiece {
+  symbol: string;
+  type: PieceSymbol;
+  color: "w" | "b";
+  label: string;
+}
+
+const PIECES: EditorPiece[] = [
   { symbol: "wK", type: "k", color: "w", label: "White King" },
   { symbol: "wQ", type: "q", color: "w", label: "White Queen" },
   { symbol: "wR", type: "r", color: "w", label: "White Rook" },
@@ -17,34 +24,39 @@ const PIECES: Array<{ symbol: string; type: PieceSymbol; color: "w" | "b"; label
   { symbol: "bP", type: "p", color: "b", label: "Black Pawn" },
 ];
 
+export { PIECES };
+
 interface BoardEditorProps {
-  actions: Pick<GameActions, "putPiece">;
+  selectedPiece: EditorPiece | null;
+  eraseMode: boolean;
+  onSelectPiece: (piece: EditorPiece | null) => void;
+  onSetEraseMode: (erase: boolean) => void;
+  validationErrors: string[];
+  turn: "w" | "b";
+  actions: Pick<GameActions, "clearBoard" | "resetGame" | "setTurnToMove">;
 }
 
-export function BoardEditor({ actions }: BoardEditorProps) {
-  const [selected, setSelected] = useState<typeof PIECES[0] | null>(null);
-  const [eraseMode, setEraseMode] = useState(false);
-  const { putPiece } = actions;
-
-  function handleSquareClick(square: Square) {
-    if (eraseMode) {
-      putPiece(square, null);
-      return;
-    }
-    if (!selected) return;
-    putPiece(square, { type: selected.type, color: selected.color });
-  }
+export function BoardEditor({
+  selectedPiece,
+  eraseMode,
+  onSelectPiece,
+  onSetEraseMode,
+  validationErrors,
+  turn,
+  actions,
+}: BoardEditorProps) {
+  const { clearBoard, resetGame, setTurnToMove } = actions;
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
-        <p className="text-xs text-primary font-medium">Board Editor Mode</p>
+      <div className="rounded-lg border border-orange-400/30 bg-orange-400/10 px-3 py-2">
+        <p className="text-xs text-orange-400 font-medium">Board Editor Mode</p>
         <p className="text-xs text-muted-foreground mt-0.5">
           {eraseMode
-            ? "Click squares to remove pieces"
-            : selected
-            ? `Placing: ${selected.label}`
-            : "Select a piece below, then click a square"}
+            ? "Click squares to remove pieces · Drag to rearrange"
+            : selectedPiece
+            ? `Placing: ${selectedPiece.label} · Drag to rearrange`
+            : "Select a piece below, then click a square · Drag to rearrange"}
         </p>
       </div>
 
@@ -55,8 +67,8 @@ export function BoardEditor({ actions }: BoardEditorProps) {
             <PieceTile
               key={piece.symbol}
               piece={piece}
-              selected={!eraseMode && selected?.symbol === piece.symbol}
-              onClick={() => { setEraseMode(false); setSelected(piece); }}
+              selected={!eraseMode && selectedPiece?.symbol === piece.symbol}
+              onClick={() => { onSetEraseMode(false); onSelectPiece(piece); }}
             />
           ))}
         </div>
@@ -69,33 +81,83 @@ export function BoardEditor({ actions }: BoardEditorProps) {
             <PieceTile
               key={piece.symbol}
               piece={piece}
-              selected={!eraseMode && selected?.symbol === piece.symbol}
-              onClick={() => { setEraseMode(false); setSelected(piece); }}
+              selected={!eraseMode && selectedPiece?.symbol === piece.symbol}
+              onClick={() => { onSetEraseMode(false); onSelectPiece(piece); }}
             />
           ))}
         </div>
       </div>
 
-      <button
-        onClick={() => { setEraseMode((e) => !e); setSelected(null); }}
-        className={`text-xs py-2 rounded-md border transition-colors font-medium ${
-          eraseMode
-            ? "bg-destructive/20 border-destructive/40 text-destructive"
-            : "bg-muted/50 border-border hover:bg-accent/60 text-muted-foreground"
-        }`}
-      >
-        {eraseMode ? "Erasing (click to stop)" : "Erase Piece"}
-      </button>
+      <div className="flex gap-1.5">
+        <button
+          onClick={() => { onSetEraseMode(!eraseMode); onSelectPiece(null); }}
+          className={`flex-1 text-xs py-2 rounded-md border transition-colors font-medium ${
+            eraseMode
+              ? "bg-destructive/20 border-destructive/40 text-destructive"
+              : "bg-muted/50 border-border hover:bg-accent/60 text-muted-foreground"
+          }`}
+        >
+          {eraseMode ? "Erasing — stop" : "Erase Piece"}
+        </button>
+        <button
+          onClick={() => { onSelectPiece(null); onSetEraseMode(false); clearBoard(); }}
+          title="Clear all pieces"
+          className="text-xs py-2 px-3 rounded-md border border-border bg-muted/50 hover:bg-accent/60 transition-colors text-muted-foreground flex items-center gap-1"
+        >
+          <Trash2 size={12} />
+        </button>
+        <button
+          onClick={() => { onSelectPiece(null); onSetEraseMode(false); resetGame(); }}
+          title="Reset to starting position"
+          className="text-xs py-2 px-3 rounded-md border border-border bg-muted/50 hover:bg-accent/60 transition-colors text-muted-foreground flex items-center gap-1"
+        >
+          <RotateCcw size={12} />
+        </button>
+      </div>
 
-      <p className="text-xs text-muted-foreground text-center">
-        Tip: Click a square to place the selected piece
-      </p>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground shrink-0">Side to move:</span>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setTurnToMove("w")}
+            className={`text-xs px-2 py-1 rounded border transition-colors ${
+              turn === "w"
+                ? "bg-primary/20 border-primary/40 text-primary"
+                : "bg-muted/40 border-border text-muted-foreground hover:bg-accent/40"
+            }`}
+          >
+            White
+          </button>
+          <button
+            onClick={() => setTurnToMove("b")}
+            className={`text-xs px-2 py-1 rounded border transition-colors ${
+              turn === "b"
+                ? "bg-primary/20 border-primary/40 text-primary"
+                : "bg-muted/40 border-border text-muted-foreground hover:bg-accent/40"
+            }`}
+          >
+            Black
+          </button>
+        </div>
+      </div>
+
+      {validationErrors.length > 0 && (
+        <div className="flex flex-col gap-1 p-2 rounded-md bg-destructive/10 border border-destructive/20">
+          <p className="text-xs font-semibold text-destructive mb-0.5">Invalid position</p>
+          {validationErrors.map((err, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-xs text-destructive">
+              <AlertCircle size={11} className="shrink-0 mt-0.5" />
+              <span>{err}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 interface PieceTileProps {
-  piece: typeof PIECES[0];
+  piece: EditorPiece;
   selected: boolean;
   onClick: () => void;
 }

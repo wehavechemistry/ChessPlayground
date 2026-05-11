@@ -38,3 +38,37 @@ export function parsePgn(chess: Chess, pgn: string): boolean {
     return false;
   }
 }
+
+export function validateEditorPosition(fen: string): string[] {
+  const errors: string[] = [];
+  const boardPart = fen.split(" ")[0];
+
+  const wKings = (boardPart.match(/K/g) ?? []).length;
+  const bKings = (boardPart.match(/k/g) ?? []).length;
+
+  if (wKings === 0) errors.push("White king is missing");
+  if (wKings > 1) errors.push("Multiple white kings");
+  if (bKings === 0) errors.push("Black king is missing");
+  if (bKings > 1) errors.push("Multiple black kings");
+
+  if (errors.length > 0) return errors;
+
+  try {
+    const chess = new Chess(fen);
+    const turn = chess.turn();
+    const fenParts = fen.split(" ");
+    fenParts[1] = turn === "w" ? "b" : "w";
+    fenParts[3] = "-";
+    try {
+      const flipped = new Chess(fenParts.join(" "));
+      if (flipped.inCheck()) {
+        const inCheckColor = turn === "w" ? "Black" : "White";
+        errors.push(`${inCheckColor} king is in check but it is not their turn`);
+      }
+    } catch { /* ignore */ }
+  } catch {
+    errors.push("Position is not valid");
+  }
+
+  return errors;
+}

@@ -1,12 +1,37 @@
+import { useState, useMemo } from "react";
 import { ChessBoard } from "@/components/ChessBoard";
 import { GameControls } from "@/components/GameControls";
 import { MoveHistory } from "@/components/MoveHistory";
 import { BoardEditor } from "@/components/BoardEditor";
+import type { EditorPiece } from "@/components/BoardEditor";
 import { MatchSetup } from "@/components/MatchSetup";
+import { EngineConsole } from "@/components/EngineConsole";
 import { useMatchController } from "@/hooks/useMatchController";
+import { validateEditorPosition } from "@/lib/chess-engine";
+import type { GameMode } from "@/hooks/useChessGame";
 
 export default function Home() {
-  const { game, config, setConfig, isBotThinking, botError, clearBotError } = useMatchController();
+  const {
+    game,
+    config,
+    setConfig,
+    isBotThinking,
+    botError,
+    clearBotError,
+    engineLogs,
+    clearEngineLogs,
+  } = useMatchController();
+
+  const [editorPiece, setEditorPiece] = useState<EditorPiece | null>(null);
+  const [editorErase, setEditorErase] = useState(false);
+
+  const validationErrors = useMemo(
+    () => (game.mode === "editor" ? validateEditorPosition(game.fen) : []),
+    [game.mode, game.fen]
+  );
+
+  const hasBotPlayer = config.white === "bot" || config.black === "bot";
+  const canSwitchToPlay = game.mode !== "editor" || validationErrors.length === 0;
 
   const state = {
     fen: game.fen,
@@ -23,6 +48,7 @@ export default function Home() {
     boardFlipped: game.boardFlipped,
     isReviewing: game.isReviewing,
     reviewIndex: game.reviewIndex,
+    syncEpoch: game.syncEpoch,
   };
 
   const actions = {
@@ -34,14 +60,32 @@ export default function Home() {
     getCurrentFen: game.getCurrentFen,
     getPgn: game.getPgn,
     flipBoard: game.flipBoard,
-    setMode: game.setMode,
+    setMode: (m: GameMode) => {
+      if (m === "play") {
+        setEditorPiece(null);
+        setEditorErase(false);
+      }
+      game.setMode(m);
+    },
     putPiece: game.putPiece,
     goToMove: game.goToMove,
     goToFirst: game.goToFirst,
     goPrev: game.goPrev,
     goNext: game.goNext,
     goToLive: game.goToLive,
+    setTurnToMove: game.setTurnToMove,
+    clearBoard: game.clearBoard,
   };
+
+  const editorConfig =
+    game.mode === "editor"
+      ? {
+          piece: editorPiece
+            ? { type: editorPiece.type, color: editorPiece.color }
+            : null,
+          eraseMode: editorErase,
+        }
+      : undefined;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -56,13 +100,22 @@ export default function Home() {
           <span className="font-semibold text-base tracking-tight">Chess Playground</span>
         </div>
         <span className="text-xs text-muted-foreground ml-auto hidden sm:inline">
-          {game.isReviewing ? "Review mode — click moves or use nav buttons" : "Drag & drop to move · Click to select"}
+          {game.isReviewing
+            ? "Review mode — click moves or use nav buttons"
+            : game.mode === "editor"
+            ? "Editor — select piece then click square · drag to move"
+            : "Drag & drop to move · Click to select"}
         </span>
       </header>
 
       <main className="flex-1 flex flex-col lg:flex-row items-start justify-center gap-6 p-6">
         <div className="w-full lg:w-auto flex justify-center">
-          <ChessBoard state={state} actions={actions} disabled={isBotThinking} />
+          <ChessBoard
+            state={state}
+            actions={actions}
+            disabled={isBotThinking}
+            editor={editorConfig}
+          />
         </div>
 
         <div className="w-full lg:w-72 flex flex-col gap-3">
@@ -74,11 +127,24 @@ export default function Home() {
             onClearError={clearBotError}
           />
 
-          <GameControls state={state} actions={actions} isBotThinking={isBotThinking} />
+          <GameControls
+            state={state}
+            actions={actions}
+            isBotThinking={isBotThinking}
+            canSwitchToPlay={canSwitchToPlay}
+          />
 
           {game.mode === "editor" ? (
             <div className="rounded-lg bg-card border border-card-border p-3">
-              <BoardEditor actions={actions} />
+              <BoardEditor
+                selectedPiece={editorPiece}
+                eraseMode={editorErase}
+                onSelectPiece={setEditorPiece}
+                onSetEraseMode={setEditorErase}
+                validationErrors={validationErrors}
+                turn={game.turn}
+                actions={actions}
+              />
             </div>
           ) : (
             <div className="rounded-lg bg-card border border-card-border p-3 flex flex-col">
@@ -95,8 +161,14 @@ export default function Home() {
             </div>
           )}
 
+          {hasBotPlayer && (
+            <EngineConsole logs={engineLogs} onClear={clearEngineLogs} />
+          )}
+
           <div className="px-1">
-            <p className="text-xs font-mono text-foreground/40 truncate">{game.fen.split(" ").slice(0, 2).join(" ")}</p>
+            <p className="text-xs font-mono text-foreground/40 truncate">
+              {game.fen.split(" ").slice(0, 4).join(" ")}
+            </p>
           </div>
         </div>
       </main>

@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { RotateCcw, FlipVertical2, Copy, Upload, Download, Pencil, Play } from "lucide-react";
+import { RotateCcw, FlipVertical2, Copy, Upload, Download, Pencil, Play, AlertTriangle } from "lucide-react";
 import type { GameState, GameActions, GameMode } from "@/hooks/useChessGame";
 
 interface GameControlsProps {
   state: GameState;
   actions: GameActions;
   isBotThinking?: boolean;
+  canSwitchToPlay?: boolean;
 }
 
-export function GameControls({ state, actions, isBotThinking }: GameControlsProps) {
+export function GameControls({ state, actions, isBotThinking, canSwitchToPlay = true }: GameControlsProps) {
   const { turn, gameOver, isCheck, mode, moveHistory, isReviewing } = state;
   const { resetGame, flipBoard, loadFen, loadPgn, getCurrentFen, getPgn, setMode } = actions;
 
@@ -43,6 +44,15 @@ export function GameControls({ state, actions, isBotThinking }: GameControlsProp
     navigator.clipboard.writeText(pgn);
     setCopied("pgn");
     setTimeout(() => setCopied(null), 1500);
+  }
+
+  function handleToggleEditor() {
+    if (mode === "editor") {
+      if (!canSwitchToPlay) return;
+      setMode("play" as GameMode);
+    } else {
+      setMode("editor" as GameMode);
+    }
   }
 
   const turnLabel = turn === "w" ? "White to move" : "Black to move";
@@ -97,16 +107,29 @@ export function GameControls({ state, actions, isBotThinking }: GameControlsProp
       <div className="grid grid-cols-2 gap-2">
         <IconButton icon={<RotateCcw size={14} />} label="New Game" onClick={resetGame} />
         <IconButton icon={<FlipVertical2 size={14} />} label="Flip Board" onClick={flipBoard} />
-        <IconButton
-          icon={mode === "editor" ? <Play size={14} /> : <Pencil size={14} />}
-          label={mode === "editor" ? "Play Mode" : "Board Editor"}
-          onClick={() => setMode(mode === "editor" ? "play" : "editor")}
-          active={mode === "editor"}
-        />
+        <button
+          onClick={handleToggleEditor}
+          disabled={mode === "editor" && !canSwitchToPlay}
+          title={mode === "editor" && !canSwitchToPlay ? "Fix position errors before switching to play" : undefined}
+          className={`flex items-center justify-center gap-2 text-xs py-2 px-3 rounded-md border transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed ${
+            mode === "editor"
+              ? "bg-orange-400/20 border-orange-400/40 text-orange-400"
+              : "bg-muted/50 border-border hover:bg-accent/60 text-foreground"
+          }`}
+        >
+          {mode === "editor" && !canSwitchToPlay ? (
+            <AlertTriangle size={14} />
+          ) : mode === "editor" ? (
+            <Play size={14} />
+          ) : (
+            <Pencil size={14} />
+          )}
+          {mode === "editor" ? "Play Mode" : "Board Editor"}
+        </button>
         <button
           onClick={() => setActivePanel(activePanel === "fen" ? null : "fen")}
           className={`flex items-center justify-center gap-2 text-xs py-2 px-3 rounded-md border transition-colors font-medium ${
-            activePanel === "fen"
+            activePanel !== null
               ? "bg-primary/20 border-primary/40 text-primary"
               : "bg-muted/50 border-border hover:bg-accent/60 text-foreground"
           }`}

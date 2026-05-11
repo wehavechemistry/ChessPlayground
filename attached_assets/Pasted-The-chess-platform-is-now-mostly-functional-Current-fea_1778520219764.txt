@@ -1,0 +1,154 @@
+The chess platform is now mostly functional.
+
+Current features:
+- legal move generation
+- PGN/FEN support
+- engine toggles
+- human vs human
+- human vs bot
+- bot vs bot
+- move history
+- checkmate/stalemate detection
+- some draw detection
+
+Now focus ONLY on stabilization, engine robustness, and missing chess correctness.
+
+========================================
+PART 1 — HUMAN MOVE FIXES
+========================================
+
+1. Add proper underpromotion support for human players:
+- queen
+- rook
+- bishop
+- knight
+
+The promotion UI should appear automatically when needed.
+
+========================================
+PART 2 — BOARD EDITOR FIXES
+========================================
+
+Current board editor drag/drop is unreliable.
+
+Fix:
+- drag and drop in board editor
+- piece placement/removal
+- board synchronization
+
+Add position legality validation.
+
+The editor should detect:
+- missing kings
+- multiple kings
+- illegal side to move
+- impossible check states
+- invalid castling rights
+
+Prevent starting games from illegal positions.
+
+========================================
+PART 3 — ENGINE TURN SYNCHRONIZATION
+========================================
+
+Current issues:
+- engines sometimes do not move automatically
+- after reset, bot vs bot may stall until a human move happens
+
+Fix engine synchronization completely.
+
+Requirements:
+- when an engine is enabled for a side:
+  - if it is that side's turn, engine should immediately think and move
+  - otherwise do nothing
+
+- after:
+  - reset
+  - undo
+  - loading FEN
+  - stepping through history
+  - exiting review mode
+
+the engine loop must re-evaluate whose turn it is.
+
+Bot vs bot should continue automatically without human interaction.
+
+Avoid race conditions and duplicate engine moves.
+
+========================================
+PART 4 — PYTHON ENGINE ROBUSTNESS
+========================================
+
+Current issue:
+- bundled random bot works
+- many imported Python engines fail
+
+Improve Python engine compatibility.
+
+Requirements:
+- robust subprocess handling
+- better stdin/stdout communication
+- clear engine error messages
+- capture stderr
+- timeout protection
+- graceful crash handling
+
+Add a visible engine console/log panel.
+
+========================================
+PART 5 — PYTHON ENVIRONMENT
+========================================
+
+Create automatic dependency setup instructions.
+
+Supported useful libraries should include:
+- python-chess
+- chess.polyglot
+- chess.syzygy
+- chess.gaviota
+- json
+- sys
+- time
+- random
+- math
+
+Generate:
+- requirements.txt
+- engine development documentation
+- example advanced bot template
+
+========================================
+PART 6 — STANDARD BOT SDK
+========================================
+
+Create a minimal official Python bot template.
+
+The template should:
+- be a single file
+- parse stdin JSON safely
+- validate legal moves
+- support python-chess
+- contain a clean engine loop
+- flush stdout correctly
+- never print accidental debug logs
+
+Include helper functions for:
+- evaluation
+- move ordering
+- opening book hooks
+- time management
+
+========================================
+IMPORTANT
+========================================
+
+Do NOT redesign the entire project.
+
+Focus on:
+- robustness
+- correctness
+- synchronization
+- compatibility
+- modularity
+
+Keep architecture simple and maintainable.

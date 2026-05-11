@@ -20,6 +20,7 @@ export interface GameState {
   boardFlipped: boolean;
   isReviewing: boolean;
   reviewIndex: number | null;
+  syncEpoch: number;
 }
 
 export interface GameActions {
@@ -38,6 +39,8 @@ export interface GameActions {
   goPrev: () => void;
   goNext: () => void;
   goToLive: () => void;
+  setTurnToMove: (turn: "w" | "b") => void;
+  clearBoard: () => void;
 }
 
 function buildPositionAt(
@@ -72,6 +75,7 @@ export function useChessGame(): GameState & GameActions {
   const [boardFlipped, setBoardFlipped] = useState(false);
   const [mode, setModeState] = useState<GameMode>("play");
   const [reviewIndex, setReviewIndex] = useState<number | null>(null);
+  const [syncEpoch, setSyncEpoch] = useState(0);
 
   const sync = useCallback(() => {
     const liveFen = chessRef.current.fen();
@@ -172,6 +176,7 @@ export function useChessGame(): GameState & GameActions {
     setLastMove(null);
     setSelectedSquare(null);
     setLegalMoves([]);
+    setSyncEpoch((e) => e + 1);
     sync();
   }, [sync]);
 
@@ -184,6 +189,7 @@ export function useChessGame(): GameState & GameActions {
         setLastMove(null);
         setSelectedSquare(null);
         setLegalMoves([]);
+        setSyncEpoch((e) => e + 1);
         sync();
         return true;
       } catch {
@@ -204,6 +210,7 @@ export function useChessGame(): GameState & GameActions {
         setLastMove(prev ? { from: prev.from as Square, to: prev.to as Square } : null);
         setSelectedSquare(null);
         setLegalMoves([]);
+        setSyncEpoch((e) => e + 1);
         sync();
         return true;
       } catch {
@@ -236,6 +243,23 @@ export function useChessGame(): GameState & GameActions {
     [sync]
   );
 
+  const setTurnToMove = useCallback(
+    (turn: "w" | "b") => {
+      const parts = chessRef.current.fen().split(" ");
+      parts[1] = turn;
+      try {
+        chessRef.current.load(parts.join(" "));
+        sync();
+      } catch { /* ignore invalid position */ }
+    },
+    [sync]
+  );
+
+  const clearBoard = useCallback(() => {
+    chessRef.current.clear();
+    sync();
+  }, [sync]);
+
   const chess = chessRef.current;
 
   return {
@@ -253,6 +277,7 @@ export function useChessGame(): GameState & GameActions {
     boardFlipped,
     isReviewing: reviewIndex !== null,
     reviewIndex,
+    syncEpoch,
     makeMove,
     selectSquare,
     resetGame,
@@ -268,5 +293,7 @@ export function useChessGame(): GameState & GameActions {
     goPrev,
     goNext,
     goToLive,
+    setTurnToMove,
+    clearBoard,
   };
 }

@@ -7,6 +7,7 @@ Protocol:
 
 Requires no external libraries — uses the legal_moves list provided by the server.
 """
+
 import sys
 import json
 import random
