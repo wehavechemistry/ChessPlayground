@@ -1,23 +1,39 @@
 import { useCallback, useMemo } from "react";
 import { Chessboard } from "react-chessboard";
+import type { PieceDropHandlerArgs, SquareHandlerArgs, PieceHandlerArgs } from "react-chessboard";
 import type { Square } from "@/lib/chess-engine";
 import type { GameState, GameActions } from "@/hooks/useChessGame";
 
 interface ChessBoardProps {
   state: GameState;
   actions: GameActions;
+  disabled?: boolean;
 }
 
-export function ChessBoard({ state, actions }: ChessBoardProps) {
-  const { fen, selectedSquare, legalMoves, lastMove, isCheck, gameOver, turn, mode, boardFlipped } = state;
+export function ChessBoard({ state, actions, disabled }: ChessBoardProps) {
+  const {
+    boardFen,
+    boardLastMove,
+    selectedSquare,
+    legalMoves,
+    isCheck,
+    fen,
+    turn,
+    gameOver,
+    mode,
+    boardFlipped,
+    isReviewing,
+  } = state;
   const { makeMove, selectSquare } = actions;
+
+  const isInteractive = !disabled && !isReviewing && mode === "play" && !gameOver.over;
 
   const customSquareStyles = useMemo(() => {
     const styles: Record<string, React.CSSProperties> = {};
 
-    if (lastMove) {
-      styles[lastMove.from] = { backgroundColor: "rgba(255, 214, 10, 0.25)" };
-      styles[lastMove.to] = { backgroundColor: "rgba(255, 214, 10, 0.35)" };
+    if (boardLastMove) {
+      styles[boardLastMove.from] = { backgroundColor: "rgba(255, 214, 10, 0.25)" };
+      styles[boardLastMove.to] = { backgroundColor: "rgba(255, 214, 10, 0.35)" };
     }
 
     if (selectedSquare) {
@@ -32,7 +48,7 @@ export function ChessBoard({ state, actions }: ChessBoardProps) {
       };
     }
 
-    if (isCheck) {
+    if (isCheck && !isReviewing) {
       const kingSquare = findKingSquare(fen, turn);
       if (kingSquare) {
         styles[kingSquare] = { backgroundColor: "rgba(220, 50, 50, 0.55)" };
@@ -40,56 +56,47 @@ export function ChessBoard({ state, actions }: ChessBoardProps) {
     }
 
     return styles;
-  }, [selectedSquare, legalMoves, lastMove, isCheck, fen, turn]);
+  }, [selectedSquare, legalMoves, boardLastMove, isCheck, fen, turn, isReviewing]);
 
   const onPieceDrop = useCallback(
-    (sourceSquare: Square, targetSquare: Square): boolean => {
-      if (mode === "editor") return false;
-      if (gameOver.over) return false;
-      return makeMove(sourceSquare, targetSquare);
+    ({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean => {
+      if (!isInteractive || !targetSquare) return false;
+      return makeMove(sourceSquare as Square, targetSquare as Square);
     },
-    [makeMove, mode, gameOver.over]
+    [makeMove, isInteractive]
   );
 
   const onSquareClick = useCallback(
-    (square: Square) => {
-      if (mode === "editor") return;
-      if (gameOver.over) return;
-
+    ({ square }: SquareHandlerArgs) => {
+      if (!isInteractive) return;
+      const sq = square as Square;
       if (selectedSquare) {
-        if (selectedSquare === square) {
-          selectSquare(null);
-          return;
-        }
-        if (legalMoves.includes(square)) {
-          makeMove(selectedSquare, square);
-          return;
-        }
+        if (selectedSquare === sq) { selectSquare(null); return; }
+        if (legalMoves.includes(sq)) { makeMove(selectedSquare, sq); return; }
       }
-
-      selectSquare(square);
+      selectSquare(sq);
     },
-    [selectedSquare, legalMoves, makeMove, selectSquare, mode, gameOver.over]
+    [selectedSquare, legalMoves, makeMove, selectSquare, isInteractive]
   );
 
-  const onPieceDragBegin = useCallback(
-    (_piece: string, square: Square) => {
-      if (mode === "play") selectSquare(square);
+  const onPieceDrag = useCallback(
+    ({ square }: PieceHandlerArgs) => {
+      if (isInteractive && square) selectSquare(square as Square);
     },
-    [selectSquare, mode]
+    [selectSquare, isInteractive]
   );
 
   return (
-    <div className="w-full max-w-[560px] aspect-square">
+    <div className="w-full max-w-[560px] aspect-square relative">
       <Chessboard
         options={{
-          position: fen,
-          onPieceDrop: ({ sourceSquare, targetSquare }) => onPieceDrop(sourceSquare as Square, targetSquare as Square),
-          onSquareClick: ({ square }) => onSquareClick(square as Square),
-          onPieceDrag: ({ square }) => onPieceDragBegin("", square as Square),
+          position: boardFen,
+          onPieceDrop,
+          onSquareClick,
+          onPieceDrag,
           squareStyles: customSquareStyles,
           boardOrientation: boardFlipped ? "black" : "white",
-          allowDragging: mode === "play" && !gameOver.over,
+          allowDragging: isInteractive,
           boardStyle: {
             borderRadius: "6px",
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
@@ -99,6 +106,9 @@ export function ChessBoard({ state, actions }: ChessBoardProps) {
           animationDurationInMs: 150,
         }}
       />
+      {isReviewing && (
+        <div className="absolute inset-0 rounded-[6px] pointer-events-none ring-2 ring-primary/40" />
+      )}
     </div>
   );
 }
@@ -108,18 +118,11 @@ function findKingSquare(fen: string, turn: "w" | "b"): Square | null {
   const board = fen.split(" ")[0];
   let file = 0;
   let rank = 7;
-
   for (const ch of board) {
-    if (ch === "/") {
-      rank--;
-      file = 0;
-    } else if (ch >= "1" && ch <= "8") {
-      file += parseInt(ch);
-    } else {
-      if (ch === pieceChar) {
-        const sq = (String.fromCharCode(97 + file) + (rank + 1)) as Square;
-        return sq;
-      }
+    if (ch === "/") { rank--; file = 0; }
+    else if (ch >= "1" && ch <= "8") { file += parseInt(ch); }
+    else {
+      if (ch === pieceChar) return (String.fromCharCode(97 + file) + (rank + 1)) as Square;
       file++;
     }
   }
