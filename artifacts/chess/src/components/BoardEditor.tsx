@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Chessboard } from "react-chessboard";
 import type { Square, PieceSymbol } from "@/lib/chess-engine";
 import type { GameActions } from "@/hooks/useChessGame";
 
@@ -113,13 +112,6 @@ function PieceTile({ piece, selected, onClick }: PieceTileProps) {
       }`}
     >
       <div className="w-7 h-7 pointer-events-none">
-        <Chessboard
-          position={{ a1: piece.symbol as any }}
-          boardWidth={28}
-          customBoardStyle={{ display: "none" }}
-          customPieces={{}}
-          arePiecesDraggable={false}
-        />
         <img
           src={`https://images.chesscomfiles.com/chess-themes/pieces/neo/150/${piece.symbol.toLowerCase()}.png`}
           alt={piece.label}

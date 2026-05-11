@@ -82,20 +82,22 @@ export function ChessBoard({ state, actions }: ChessBoardProps) {
   return (
     <div className="w-full max-w-[560px] aspect-square">
       <Chessboard
-        position={fen}
-        onPieceDrop={onPieceDrop}
-        onSquareClick={onSquareClick}
-        onPieceDragBegin={onPieceDragBegin}
-        customSquareStyles={customSquareStyles}
-        boardOrientation={boardFlipped ? "black" : "white"}
-        arePiecesDraggable={mode === "play" && !gameOver.over}
-        customBoardStyle={{
-          borderRadius: "6px",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        options={{
+          position: fen,
+          onPieceDrop: ({ sourceSquare, targetSquare }) => onPieceDrop(sourceSquare as Square, targetSquare as Square),
+          onSquareClick: ({ square }) => onSquareClick(square as Square),
+          onPieceDrag: ({ square }) => onPieceDragBegin("", square as Square),
+          squareStyles: customSquareStyles,
+          boardOrientation: boardFlipped ? "black" : "white",
+          allowDragging: mode === "play" && !gameOver.over,
+          boardStyle: {
+            borderRadius: "6px",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          },
+          darkSquareStyle: { backgroundColor: "#5d8a6e" },
+          lightSquareStyle: { backgroundColor: "#f0d9b5" },
+          animationDurationInMs: 150,
         }}
-        customDarkSquareStyle={{ backgroundColor: "#5d8a6e" }}
-        customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
-        animationDuration={150}
       />
     </div>
   );
