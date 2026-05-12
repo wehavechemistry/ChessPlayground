@@ -1,6 +1,5 @@
 export async function requestBotMove(args: {
   fen: string;
-  moves: string[];
   turn: "w" | "b";
   botFile: string;
   timeMs?: number;
@@ -10,7 +9,6 @@ export async function requestBotMove(args: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       fen: args.fen,
-      moves: args.moves,
       turn: args.turn,
       botFile: args.botFile,
       timeMs: args.timeMs ?? 1000,

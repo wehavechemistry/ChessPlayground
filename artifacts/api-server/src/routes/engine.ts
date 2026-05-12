@@ -7,9 +7,8 @@ import path from "path";
 const router = Router();
 
 router.post("/move", async (req, res) => {
-  const { fen, moves, turn, timeMs = 1000, botFile } = req.body as {
+  const { fen, turn, timeMs = 1000, botFile } = req.body as {
     fen?: string;
-    moves?: string[];
     turn?: "w" | "b";
     timeMs?: number;
     botFile?: string;
@@ -17,11 +16,12 @@ router.post("/move", async (req, res) => {
 
   if (
     typeof fen !== "string" ||
-    !Array.isArray(moves) ||
     (turn !== "w" && turn !== "b") ||
     typeof botFile !== "string"
   ) {
-    res.status(400).json({ error: "Invalid request body — required: fen (string), moves (array), turn ('w'|'b'), botFile (string)" });
+    res.status(400).json({
+      error: "Invalid request body — required: fen (string), turn ('w'|'b'), botFile (string)",
+    });
     return;
   }
 
@@ -50,20 +50,27 @@ router.post("/move", async (req, res) => {
     return;
   }
 
+  // Validate that the FEN's turn matches the requested turn
+  if (chess.turn() !== turn) {
+    res.status(400).json({
+      error: `FEN turn "${chess.turn()}" does not match requested turn "${turn}"`,
+    });
+    return;
+  }
+
+  // Compute legal moves server-side from the FEN — no client-side move list needed
   const legalMoves = chess
     .moves({ verbose: true })
     .map((m) => m.from + m.to + (m.promotion ?? ""));
 
-  // Provide both `turn` ("w"/"b") and `color` ("white"/"black") so bots
-  // have an unambiguous, human-readable field to check which side they are.
   const color = turn === "w" ? "white" : "black";
 
+  // Send only FEN + derived data — no move history, which could be stale
   const payload = JSON.stringify({
     fen,
-    moves,
-    legal_moves: legalMoves,
-    turn,       // "w" or "b"  — matches chess.js / python-chess board.turn
-    color,      // "white" or "black"  — unambiguous human-readable alias
+    legal_moves: legalMoves, // pre-computed, 100% accurate for this FEN
+    turn,                    // "w" or "b"
+    color,                   // "white" or "black" (human-readable alias)
     time_ms: timeMs,
   });
 
@@ -133,8 +140,9 @@ function runBot(botPath: string, payload: string, timeoutMs: number): Promise<st
           settle(() => reject(new Error("Bot produced no output")));
           return;
         }
-        // Take only the last line — some bots may print debug lines before the JSON
-        const lastLine = trimmed.split("\n").pop()!.trim();
+        // Take only the last non-empty line — bots may print debug lines before the JSON
+        const lines = trimmed.split("\n").map((l) => l.trim()).filter(Boolean);
+        const lastLine = lines[lines.length - 1]!;
         const result = JSON.parse(lastLine) as { bestmove?: string };
         if (result.bestmove == null) {
           settle(() => reject(new Error("Bot output missing 'bestmove' field")));

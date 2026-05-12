@@ -2,23 +2,30 @@
 template_bot.py — Official Chess Playground Bot Template
 
 Protocol (JSON over stdin/stdout):
-  stdin:  {"fen": "...", "moves": [...], "legal_moves": [...],
-           "turn": "w"|"b", "color": "white"|"black", "time_ms": 1000}
-  stdout: {"bestmove": "e2e4"}   (UCI move string, e.g. "e7e8q" for promotion)
+  stdin:  {"fen": "...", "legal_moves": [...], "turn": "w"|"b",
+           "color": "white"|"black", "time_ms": 1000}
+  stdout: {"bestmove": "e2e4"}
 
 Key protocol fields
 -------------------
-  legal_moves — ALREADY FILTERED for the side to move by the server.
-                Always pick from this list to avoid illegal-move errors.
-                This is the safest approach and avoids color-confusion bugs.
+  fen         — The ONLY source of truth for board state. Encodes position,
+                side to move, castling rights, and en passant square.
+                Use chess.Board(fen) to reconstruct the exact position.
 
-  turn        — "w" or "b"  (same as python-chess board.turn: chess.WHITE/chess.BLACK)
+  legal_moves — All legal UCI moves for the side to move, pre-computed from
+                the FEN by the server. Pick from here to avoid illegal moves.
+                Format: "e2e4", promotion: "e7e8q".
+
+  turn        — "w" or "b"  (same as python-chess board.turn)
   color       — "white" or "black"  — unambiguous human-readable alias.
-                Use this if you find "w"/"b" confusing.
+  time_ms     — Think budget in ms. Return before this expires.
 
-  fen         — current board position (FEN).  board.turn already encodes the side.
-  time_ms     — your thinking budget in ms. Return before this expires.
-  moves       — full game move history in UCI format (useful for opening books).
+IMPORTANT NOTES
+---------------
+* Do NOT use the `moves` field (it was removed — FEN is the single source of truth).
+* Always verify your move is in legal_moves, or let the server validate it.
+* Use board.turn after chess.Board(fen) — it will match data["turn"].
+* Debug output goes to stderr only. Any stdout that isn't valid JSON will break things.
 
 Requirements:
   pip install chess
@@ -34,17 +41,12 @@ import time
 import random
 import math
 
-# ── Optional: python-chess ─────────────────────────────────────────────────────
 try:
     import chess
     HAS_CHESS = True
 except ImportError:
     HAS_CHESS = False
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
     raw = sys.stdin.readline()
@@ -53,14 +55,11 @@ def main() -> None:
     except json.JSONDecodeError as exc:
         _fatal(f"Failed to parse input JSON: {exc}")
 
-    fen: str = data.get("fen", "")
-    legal_moves: list[str] = data.get("legal_moves", [])  # already for side to move
+    fen: str = data["fen"]
+    legal_moves: list[str] = data["legal_moves"]  # use this — guaranteed correct
     time_ms: int = data.get("time_ms", 1000)
-
-    # NOTE: use data["color"] ("white"/"black") or data["turn"] ("w"/"b")
-    # to know which side you are playing. Both refer to the same thing.
-    # color: str = data.get("color", "white")   # "white" or "black"
-    # turn:  str = data.get("turn",  "w")        # "w" or "b"
+    # color: str = data["color"]  # "white" or "black"
+    # turn:  str = data["turn"]   # "w" or "b"
 
     if not legal_moves:
         _respond("")
@@ -70,39 +69,29 @@ def main() -> None:
     _respond(bestmove)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SEARCH  ← implement your engine here
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def search(fen: str, legal_moves: list[str], time_ms: int) -> str:
     """
     Return the best move as a UCI string (e.g. "e2e4", "e7e8q").
 
     Parameters
     ----------
-    fen        : current position in FEN notation
-    legal_moves: list of all legal moves in UCI format (provided by the server,
-                 already filtered for the side to move — safe to pick from directly)
-    time_ms    : suggested thinking time in milliseconds
-
-    The simplest possible engine just picks randomly.  Replace this with
-    your own evaluation + search.
+    fen        : current position (FEN). board.turn tells you which side you are.
+    legal_moves: all legal moves for the side to move — safe to pick from directly.
+    time_ms    : thinking budget in ms.
     """
     if not HAS_CHESS:
-        # Fallback: random move from the server-provided legal list
         return random.choice(legal_moves)
 
     board = chess.Board(fen)
-    # board.turn == chess.WHITE  when it's white's turn
-    # board.turn == chess.BLACK  when it's black's turn
+    # board.turn == chess.WHITE when it's white's turn
+    # board.turn == chess.BLACK when it's black's turn
 
-    # Example: one-ply material evaluation
     best_score = -math.inf
     best_move: "chess.Move | None" = None
     deadline = time.monotonic() + time_ms / 1000.0
 
     moves = list(board.legal_moves)
-    random.shuffle(moves)  # randomise tie-breaking
+    random.shuffle(moves)
 
     for move in moves:
         if time.monotonic() > deadline:
@@ -110,7 +99,6 @@ def search(fen: str, legal_moves: list[str], time_ms: int) -> str:
         board.push(move)
         score = -material(board)
         board.pop()
-
         if score > best_score:
             best_score = score
             best_move = move
@@ -121,40 +109,25 @@ def search(fen: str, legal_moves: list[str], time_ms: int) -> str:
     return best_move.uci()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# HELPER FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════════
-
 PIECE_VALUES = {
-    chess.PAWN:   100,
-    chess.KNIGHT: 320,
-    chess.BISHOP: 330,
-    chess.ROOK:   500,
-    chess.QUEEN:  900,
-    chess.KING:   0,
+    chess.PAWN: 100, chess.KNIGHT: 320, chess.BISHOP: 330,
+    chess.ROOK: 500, chess.QUEEN: 900, chess.KING: 0,
 } if HAS_CHESS else {}
 
 
 def material(board: "chess.Board") -> int:
-    """Return material balance from the perspective of the side to move."""
     score = 0
-    for piece_type, value in PIECE_VALUES.items():
-        score += value * len(board.pieces(piece_type, board.turn))
-        score -= value * len(board.pieces(piece_type, not board.turn))
+    for pt, v in PIECE_VALUES.items():
+        score += v * len(board.pieces(pt, board.turn))
+        score -= v * len(board.pieces(pt, not board.turn))
     return score
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# I/O HELPERS  — do not modify
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def _respond(bestmove: str) -> None:
-    """Write the response to stdout and flush immediately."""
     print(json.dumps({"bestmove": bestmove}), flush=True)
 
 
 def _fatal(message: str) -> None:
-    """Write an error to stderr and exit with a non-zero code."""
     print(f"[bot error] {message}", file=sys.stderr, flush=True)
     sys.exit(1)
 

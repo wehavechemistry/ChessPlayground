@@ -2,17 +2,20 @@
 random_bot.py — Example Python bot for Chess Playground
 
 Protocol:
-  stdin:  one JSON line with keys: fen, moves, legal_moves, turn, color, time_ms
+  stdin:  one JSON line with keys: fen, legal_moves, turn, color, time_ms
   stdout: one JSON line with key:  bestmove  (UCI format, e.g. "e2e4")
 
 Fields:
-  legal_moves — list of all legal UCI moves for the side to move (safest to use this)
-  turn        — "w" or "b"  (matches chess.js / python-chess board.turn)
+  fen         — current position in FEN (encodes position + side to move + castling + en passant)
+  legal_moves — all legal UCI moves for the side to move (pre-computed from FEN by the server)
+  turn        — "w" or "b"  (matches python-chess board.turn)
   color       — "white" or "black"  (human-readable alias for turn)
-  fen         — current position in FEN notation
   time_ms     — suggested thinking time budget in milliseconds
 
-Requires no external libraries — uses the legal_moves list provided by the server.
+IMPORTANT: Always pick your move from legal_moves — they are guaranteed correct.
+Do NOT reconstruct legal moves yourself unless you trust your board setup is correct.
+
+Requires no external libraries.
 """
 
 import sys
@@ -26,7 +29,6 @@ def main() -> None:
 
     legal = data.get("legal_moves", [])
     if not legal:
-        # No legal moves — game is over; return empty (server handles gracefully)
         print(json.dumps({"bestmove": ""}), flush=True)
         return
 

@@ -8,11 +8,28 @@ interface EngineConsoleProps {
 }
 
 export function EngineConsole({ logs, onClear }: EngineConsoleProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wasAtBottomRef = useRef(true);
 
+  // Scroll the inner container — never the page
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = containerRef.current;
+    if (!el) return;
+    // Only auto-scroll if user was already at (or near) the bottom
+    const threshold = 40;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    if (atBottom || wasAtBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [logs.length]);
+
+  // Track whether user is at bottom manually
+  function onScroll() {
+    const el = containerRef.current;
+    if (!el) return;
+    wasAtBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }
 
   return (
     <div className="rounded-lg bg-card border border-card-border p-3">
@@ -33,7 +50,12 @@ export function EngineConsole({ logs, onClear }: EngineConsoleProps) {
           </button>
         )}
       </div>
-      <div className="h-28 overflow-y-auto font-mono text-[11px] space-y-0.5 bg-muted/30 rounded-md p-2">
+      <div
+        ref={containerRef}
+        onScroll={onScroll}
+        className="h-28 overflow-y-auto font-mono text-[11px] space-y-0.5 bg-muted/30 rounded-md p-2"
+        style={{ scrollbarWidth: "thin" }}
+      >
         {logs.length === 0 ? (
           <p className="text-muted-foreground italic">No engine activity yet</p>
         ) : (
@@ -54,7 +76,6 @@ export function EngineConsole({ logs, onClear }: EngineConsoleProps) {
             </div>
           ))
         )}
-        <div ref={bottomRef} />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Chessboard } from "react-chessboard";
+import type { Arrow } from "react-chessboard";
 import type { PieceDropHandlerArgs, SquareHandlerArgs, PieceHandlerArgs } from "react-chessboard";
 import type { Square, PieceSymbol } from "@/lib/chess-engine";
 import type { GameState, GameActions } from "@/hooks/useChessGame";
@@ -64,6 +65,13 @@ const PROMOTION_PIECES: Array<{ type: PieceSymbol; label: string }> = [
   { type: "n", label: "Knight" },
 ];
 
+// Highlight colors cycle on right-click: none → orange → blue → green → none
+const HIGHLIGHT_COLORS = [
+  "rgba(235, 97, 20, 0.55)",
+  "rgba(50, 120, 220, 0.50)",
+  "rgba(60, 180, 60, 0.50)",
+];
+
 export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps) {
   const {
     boardFen,
@@ -82,6 +90,10 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
 
   const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null);
 
+  // Arrow and highlight state — purely visual, cleared when a move is made
+  const [userArrows, setUserArrows] = useState<Arrow[]>([]);
+  const [highlights, setHighlights] = useState<Record<string, number>>({});
+
   const isPlayMode = mode === "play";
   const isEditorMode = mode === "editor";
   const isInteractive = !disabled && !isReviewing && isPlayMode && !gameOver.over && !pendingPromotion;
@@ -89,6 +101,12 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
 
   const customSquareStyles = useMemo(() => {
     const styles: Record<string, React.CSSProperties> = {};
+
+    // Right-click highlights (drawn below everything else)
+    for (const [sq, colorIdx] of Object.entries(highlights)) {
+      const color = HIGHLIGHT_COLORS[colorIdx % HIGHLIGHT_COLORS.length];
+      if (color) styles[sq] = { backgroundColor: color };
+    }
 
     if (boardLastMove) {
       styles[boardLastMove.from] = { backgroundColor: "rgba(255, 214, 10, 0.25)" };
@@ -115,7 +133,30 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
     }
 
     return styles;
-  }, [selectedSquare, legalMoves, boardLastMove, isCheck, fen, turn, isReviewing, isPlayMode]);
+  }, [highlights, selectedSquare, legalMoves, boardLastMove, isCheck, fen, turn, isReviewing, isPlayMode]);
+
+  // Right-click on a square: cycle highlight color
+  const onSquareRightClick = useCallback(({ square }: SquareHandlerArgs) => {
+    const sq = square as Square;
+    setHighlights((prev) => {
+      const current = prev[sq];
+      if (current === undefined) {
+        return { ...prev, [sq]: 0 };
+      }
+      const next = current + 1;
+      if (next >= HIGHLIGHT_COLORS.length) {
+        const { [sq]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [sq]: next };
+    });
+  }, []);
+
+  // Clear highlights + arrows when a left-click move happens
+  const clearAnnotations = useCallback(() => {
+    setHighlights({});
+    setUserArrows([]);
+  }, []);
 
   const onPieceDrop = useCallback(
     ({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean => {
@@ -126,9 +167,11 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
         setPendingPromotion({ from, to });
         return false;
       }
-      return makeMove(from, to);
+      const ok = makeMove(from, to);
+      if (ok) clearAnnotations();
+      return ok;
     },
-    [makeMove, isInteractive, boardFen]
+    [makeMove, isInteractive, boardFen, clearAnnotations]
   );
 
   const onEditorPieceDrop = useCallback(
@@ -166,13 +209,15 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
             setPendingPromotion({ from: selectedSquare, to: sq });
             return;
           }
-          makeMove(selectedSquare, sq);
+          const ok = makeMove(selectedSquare, sq);
+          if (ok) clearAnnotations();
           return;
         }
       }
       selectSquare(sq);
     },
-    [selectedSquare, legalMoves, makeMove, selectSquare, isInteractive, isEditorInteractive, boardFen, editor, putPiece]
+    [selectedSquare, legalMoves, makeMove, selectSquare, isInteractive, isEditorInteractive,
+     boardFen, editor, putPiece, clearAnnotations]
   );
 
   const onPieceDrag = useCallback(
@@ -188,8 +233,9 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
       makeMove(pendingPromotion.from, pendingPromotion.to, pieceType);
       setPendingPromotion(null);
       selectSquare(null);
+      clearAnnotations();
     },
-    [pendingPromotion, makeMove, selectSquare]
+    [pendingPromotion, makeMove, selectSquare, clearAnnotations]
   );
 
   const cancelPromotion = useCallback(() => {
@@ -200,16 +246,22 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
   const effectiveDrop = isEditorInteractive ? onEditorPieceDrop : onPieceDrop;
 
   return (
-    <div className="w-full max-w-[560px] aspect-square relative">
+    <div className="w-full max-w-[560px] aspect-square relative select-none">
       <Chessboard
         options={{
           position: boardFen,
           onPieceDrop: effectiveDrop,
           onSquareClick,
           onPieceDrag,
+          onSquareRightClick,
           squareStyles: customSquareStyles,
           boardOrientation: boardFlipped ? "black" : "white",
           allowDragging: isInteractive || isEditorInteractive,
+          // Built-in right-click drag arrow drawing
+          allowDrawingArrows: !isEditorInteractive,
+          arrows: userArrows,
+          onArrowsChange: ({ arrows }) => setUserArrows(arrows),
+          clearArrowsOnClick: false, // we manage clearing ourselves
           boardStyle: {
             borderRadius: "6px",
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
@@ -261,6 +313,15 @@ export function ChessBoard({ state, actions, disabled, editor }: ChessBoardProps
             </div>
           </div>
         </>
+      )}
+
+      {/* Annotation hint */}
+      {isPlayMode && !gameOver.over && !isReviewing && (
+        <div className="absolute bottom-1 left-0 right-0 flex justify-center pointer-events-none">
+          <span className="text-[9px] text-white/20 select-none">
+            Right-click to annotate · Drag right-click for arrows
+          </span>
+        </div>
       )}
     </div>
   );

@@ -13,6 +13,7 @@ export function useMatchController() {
   const [config, setConfig] = useState<MatchConfig>(DEFAULT_MATCH_CONFIG);
   const [isBotThinking, setIsBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
+  const [botStopped, setBotStopped] = useState(false);
   const [engineLogs, setEngineLogs] = useState<EngineLog[]>([]);
   const [botTrigger, setBotTrigger] = useState(0);
 
@@ -40,6 +41,7 @@ export function useMatchController() {
     if (game.gameOver.over) return;
     if (game.isReviewing) return;
     if (isBotThinkingRef.current) return;
+    if (botStopped) return; // engine halted due to error — wait for user to resume
 
     const currentConfig = configRef.current;
     const currentPlayer = game.turn === "w" ? currentConfig.white : currentConfig.black;
@@ -55,17 +57,19 @@ export function useMatchController() {
     const side = game.turn;
     const sideName = side === "w" ? "White" : "Black";
 
+    // Capture FEN at the moment we start thinking.
+    // We only send FEN (not moves) — FEN encodes the complete board state with 100% accuracy.
+    const thinkingFen = game.fen;
+
     isBotThinkingRef.current = true;
     setIsBotThinking(true);
     setBotError(null);
 
     addLog({ side, type: "start", message: `${sideName} thinking (${botFile}, ${timeMs}ms)…` });
 
-    const moves = game.moveHistory.map(
-      (m) => m.from + m.to + (m.promotion ?? "")
-    );
+    let hadError = false;
 
-    requestBotMove({ fen: game.fen, moves, turn: game.turn, botFile, timeMs })
+    requestBotMove({ fen: thinkingFen, turn: game.turn, botFile, timeMs })
       .then((bestmove) => {
         if (!bestmove) {
           addLog({ side, type: "move", message: `${sideName} has no legal moves` });
@@ -77,17 +81,30 @@ export function useMatchController() {
         const ok = makeMoveRef.current(from, to, promotion);
         if (ok) {
           addLog({ side, type: "move", message: `${sideName} played ${bestmove}` });
+        } else {
+          // Move was rejected by client (position changed since bot started thinking)
+          hadError = true;
+          const msg = `${sideName} returned a move that no longer applies (${bestmove}) — engine halted`;
+          setBotError(msg);
+          setBotStopped(true);
+          addLog({ side, type: "error", message: `HALT: ${msg}` });
         }
       })
       .catch((err: unknown) => {
+        hadError = true;
         const msg = err instanceof Error ? err.message : String(err);
         setBotError(msg);
-        addLog({ side, type: "error", message: `ERROR: ${msg}` });
+        setBotStopped(true); // stop engine — requires user to resume
+        addLog({ side, type: "error", message: `ERROR (engine halted): ${msg}` });
       })
       .finally(() => {
         isBotThinkingRef.current = false;
         setIsBotThinking(false);
-        setBotTrigger((t) => t + 1);
+        // Only re-trigger bot-vs-bot loop on success.
+        // On error we halt and wait for user action.
+        if (!hadError) {
+          setBotTrigger((t) => t + 1);
+        }
       });
   }, [
     game.fen,
@@ -96,10 +113,22 @@ export function useMatchController() {
     game.isReviewing,
     game.syncEpoch,
     botTrigger,
+    botStopped,
     config.white,
     config.black,
     addLog,
   ]);
+
+  const resumeEngine = useCallback(() => {
+    setBotError(null);
+    setBotStopped(false);
+    setBotTrigger((t) => t + 1);
+  }, []);
+
+  const clearBotError = useCallback(() => {
+    setBotError(null);
+    setBotStopped(false);
+  }, []);
 
   return {
     game,
@@ -107,7 +136,9 @@ export function useMatchController() {
     setConfig,
     isBotThinking,
     botError,
-    clearBotError: () => setBotError(null),
+    botStopped,
+    clearBotError,
+    resumeEngine,
     engineLogs,
     clearEngineLogs: () => setEngineLogs([]),
   };
