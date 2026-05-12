@@ -1,257 +1,231 @@
 import sys
 import json
 import time
+import random
 import chess
-import chess.polyglot
 
-# --- Evaluation Constants ---
-
-# Material Values
-PIECE_VALUES = {
-    chess.PAWN: 100,
-    chess.KNIGHT: 320,
-    chess.BISHOP: 330,
-    chess.ROOK: 500,
-    chess.QUEEN: 900,
-    chess.KING: 20000
-}
-
-# Piece-Square Tables (PST) - Encourages center control and development
+# --- Piece-Square Tables (PST) ---
+# Aligned with python-chess: index 0 is A1, index 63 is H8.
+# These tables encourage center control and development.
 PST = {
     chess.PAWN: [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        50, 50, 50, 50, 50, 50, 50, 50,
+         0,  0,  0,  0,  0,  0,  0,  0,
+         5, 10, 10,-20,-20, 10, 10,  5,
+         5, -5,-10,  0,  0,-10, -5,  5,
+         0,  0,  0, 20, 20,  0,  0,  0,
+         5,  5, 10, 25, 25, 10,  5,  5,
         10, 10, 20, 30, 30, 20, 10, 10,
-        5,  5, 10, 25, 25, 10,  5,  5,
-        0,  0,  0, 20, 20,  0,  0,  0,
-        5, -5,-10,  0,  0,-10, -5,  5,
-        5, 10, 10,-20,-20, 10, 10,  5,
-        0,  0,  0,  0,  0,  0,  0,  0
+        50, 50, 50, 50, 50, 50, 50, 50,
+         0,  0,  0,  0,  0,  0,  0,  0
     ],
     chess.KNIGHT: [
         -50,-40,-30,-30,-30,-30,-40,-50,
-        -40,-20,  0,  0,  0,  0,-20,-40,
-        -30,  0, 10, 15, 15, 10,  0,-30,
-        -30,  5, 15, 20, 20, 15,  5,-30,
-        -30,  0, 15, 20, 20, 15,  0,-30,
-        -30,  5, 10, 15, 15, 10,  5,-30,
         -40,-20,  0,  5,  5,  0,-20,-40,
+        -30,  5, 10, 15, 15, 10,  5,-30,
+        -30,  0, 15, 20, 20, 15,  0,-30,
+        -30,  5, 15, 20, 20, 15,  5,-30,
+        -30,  0, 10, 15, 15, 10,  0,-30,
+        -40,-20,  0,  0,  0,  0,-20,-40,
         -50,-40,-30,-30,-30,-30,-40,-50
     ],
     chess.BISHOP: [
         -20,-10,-10,-10,-10,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5, 10, 10,  5,  0,-10,
-        -10,  5,  5, 10, 10,  5,  5,-10,
-        -10,  0, 10, 10, 10, 10,  0,-10,
-        -10, 10, 10, 10, 10, 10, 10,-10,
         -10,  5,  0,  0,  0,  0,  5,-10,
+        -10, 10, 10, 10, 10, 10, 10,-10,
+        -10,  0, 10, 10, 10, 10,  0,-10,
+        -10,  5,  5, 10, 10,  5,  5,-10,
+        -10,  0,  5, 10, 10,  5,  0,-10,
+        -10,  0,  0,  0,  0,  0,  0,-10,
         -20,-10,-10,-10,-10,-10,-10,-20
     ],
     chess.ROOK: [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        5, 10, 10, 10, 10, 10, 10,  5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-        0,  0,  0,  5,  5,  0,  0,  0
+         0,  0,  0,  5,  5,  0,  0,  0,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+         5, 10, 10, 10, 10, 10, 10,  5,
+         0,  0,  0,  0,  0,  0,  0,  0
     ],
     chess.QUEEN: [
         -20,-10,-10, -5, -5,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5,  5,  5,  5,  0,-10,
-         -5,  0,  5,  5,  5,  5,  0, -5,
-          0,  0,  5,  5,  5,  5,  0, -5,
-        -10,  5,  5,  5,  5,  5,  0,-10,
         -10,  0,  5,  0,  0,  0,  0,-10,
+        -10,  5,  5,  5,  5,  5,  0,-10,
+         0,  0,  5,  5,  5,  5,  0, -5,
+        -5,  0,  5,  5,  5,  5,  0, -5,
+        -10,  0,  5,  5,  5,  5,  0,-10,
+        -10,  0,  0,  0,  0,  0,  0,-10,
         -20,-10,-10, -5, -5,-10,-10,-20
     ],
     chess.KING: [
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -20,-30,-30,-40,-40,-30,-30,-20,
+        20, 30, 10,  0,  0, 10, 30, 20,
+        20, 20,  0,  0,  0,  0, 20, 20,
         -10,-20,-20,-20,-20,-20,-20,-10,
-         20, 20,  0,  0,  0,  0, 20, 20,
-         20, 30, 10,  0,  0, 10, 30, 20
+        -20,-30,-30,-40,-40,-30,-30,-20,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30
     ]
 }
 
-class ChessBot:
-    def __init__(self, book_path=None):
-        self.board = chess.Board()
-        self.start_time = 0
+PIECE_VALUES = {
+    chess.PAWN: 100, chess.KNIGHT: 320, chess.BISHOP: 330,
+    chess.ROOK: 500, chess.QUEEN: 900, chess.KING: 20000
+}
+
+class Engine:
+    def __init__(self):
+        self.board = None
+        self.nodes = 0
         self.time_limit = 0
-        self.book = None
-        if book_path:
-            try:
-                self.book = chess.polyglot.open_reader(book_path)
-            except FileNotFoundError:
-                pass
+        self.start_time = 0
 
     def evaluate(self):
         if self.board.is_checkmate():
-            return -30000 if self.board.turn == chess.WHITE else 30000
-        if self.board.is_stalemate() or self.board.is_insufficient_material():
+            return -30000 if self.board.turn else 30000
+        if self.board.is_draw():
             return 0
 
         score = 0
+        for sq, pc in self.board.piece_map().items():
+            val = PIECE_VALUES[pc.piece_type]
+            # Use mirrored square for black pieces
+            idx = sq if pc.color == chess.WHITE else chess.square_mirror(sq)
+            pst_val = PST[pc.piece_type][idx]
 
-        # Material and PST
-        for pt in PIECE_VALUES:
-            # White pieces
-            for sq in self.board.pieces(pt, chess.WHITE):
-                score += PIECE_VALUES[pt]
-                score += PST[pt][chess.square_mirror(sq)]
-            # Black pieces
-            for sq in self.board.pieces(pt, chess.BLACK):
-                score -= PIECE_VALUES[pt]
-                score -= PST[pt][sq]
-
-        # Mobility (Simple count of legal moves)
-        mobility = self.board.legal_moves.count()
-        score += mobility if self.board.turn == chess.WHITE else -mobility
+            if pc.color == chess.WHITE:
+                score += (val + pst_val)
+            else:
+                score -= (val + pst_val)
 
         return score if self.board.turn == chess.WHITE else -score
 
     def quiescence(self, alpha, beta):
+        self.nodes += 1
         stand_pat = self.evaluate()
-        if stand_pat >= beta:
-            return beta
-        if alpha < stand_pat:
-            alpha = stand_pat
+        if stand_pat >= beta: return beta
+        if alpha < stand_pat: alpha = stand_pat
 
         for move in self.board.legal_moves:
             if self.board.is_capture(move):
                 self.board.push(move)
                 score = -self.quiescence(-beta, -alpha)
                 self.board.pop()
-
-                if score >= beta:
-                    return beta
-                if score > alpha:
-                    alpha = score
+                if score >= beta: return beta
+                if score > alpha: alpha = score
         return alpha
 
-    def order_moves(self, moves):
-        # MVV-LVA (Most Valuable Victim - Least Valuable Aggressor)
-        def score_move(move):
-            if self.board.is_capture(move):
-                victim = self.board.piece_at(move.to_square)
-                aggressor = self.board.piece_at(move.from_square)
-                if victim and aggressor:
-                    return 10 * PIECE_VALUES[victim.piece_type] - PIECE_VALUES[aggressor.piece_type]
-            return 0
-        return sorted(moves, key=score_move, reverse=True)
+    def negamax(self, depth, alpha, beta):
+        self.nodes += 1
+        if self.nodes % 1024 == 0:
+            if (time.time() - self.start_time) * 1000 > self.time_limit:
+                raise TimeoutError()
 
-    def minimax(self, depth, alpha, beta):
-        if time.time() - self.start_time > self.time_limit:
-            return None # Time out
-
-        if depth == 0:
+        if depth <= 0:
             return self.quiescence(alpha, beta)
 
-        moves = self.order_moves(list(self.board.legal_moves))
-        if not moves:
-            return self.evaluate()
+        if self.board.is_checkmate(): return -20000 - depth
+        if self.board.is_draw(): return 0
 
         best_score = -float('inf')
+        # Simple move ordering: captures first
+        moves = sorted(self.board.legal_moves, key=lambda m: self.board.is_capture(m), reverse=True)
+
         for move in moves:
             self.board.push(move)
-            score = -self.minimax(depth - 1, -beta, -alpha)
-            self.board.pop()
-
-            if score is None: return None
-
-            if score >= beta:
-                return beta
-            if score > best_score:
-                best_score = score
-            if score > alpha:
-                alpha = score
-
-        return best_score
-
-    def get_best_move(self, time_ms):
-        # Opening Book Check
-        if self.book:
-            entry = self.book.get(self.board)
-            if entry:
-                return entry.move
-
-        self.start_time = time.time()
-        self.time_limit = (time_ms / 1000.0) * 0.95 # Buffer for safety
-
-        best_move = None
-        # Iterative Deepening
-        for depth in range(1, 10): # Max depth 10 for safety
-            current_best_move = None
-            max_score = -float('inf')
-
-            alpha = -float('inf')
-            beta = float('inf')
-
-            moves = self.order_moves(list(self.board.legal_moves))
-            for move in moves:
-                self.board.push(move)
-                score = -self.minimax(depth - 1, -beta, -alpha)
+            try:
+                score = -self.negamax(depth - 1, -beta, -alpha)
+            finally:
                 self.board.pop()
 
-                if score is None: # Time expired during sub-search
-                    break
-
-                if score > max_score:
-                    max_score = score
-                    current_best_move = move
-
-                alpha = max(alpha, score)
-
-            if current_best_move:
-                best_move = current_best_move
-            else:
-                break # Stop if we couldn't complete the current depth
-
-            if time.time() - self.start_time > self.time_limit:
+            if score > best_score:
+                best_score = score
+            alpha = max(alpha, score)
+            if alpha >= beta:
                 break
+        return best_score
 
-        return best_move if best_move else list(self.board.legal_moves)[0]
+    def search(self, fen, time_ms):
+        self.board = chess.Board(fen)
+        self.start_time = time.time()
+        self.time_limit = time_ms * 0.8 # Safety margin
+        self.nodes = 0
+
+        best_move = random.choice(list(self.board.legal_moves))
+
+        try:
+            for depth in range(1, 10): # Iterative deepening
+                current_best = None
+                alpha, beta = -float('inf'), float('inf')
+                moves = sorted(self.board.legal_moves, key=lambda m: self.board.is_capture(m), reverse=True)
+
+                for move in moves:
+                    self.board.push(move)
+                    try:
+                        score = -self.negamax(depth - 1, -beta, -alpha)
+                    finally:
+                        self.board.pop()
+
+                    if score > alpha:
+                        alpha = score
+                        current_best = move
+
+                if current_best:
+                    best_move = current_best
+        except TimeoutError:
+            pass
+
+        return best_move
 
 def main():
-    # You can specify a .bin book path here if you have one locally
-    bot = ChessBot(book_path="opening_book.bin")
-
+    engine = Engine()
     while True:
         line = sys.stdin.readline()
-        if not line:
-            break
+        if not line: break
 
         try:
             data = json.loads(line)
             fen = data.get("fen")
-            moves = data.get("moves", [])
             time_ms = data.get("time_ms", 1000)
+            platform_legal = data.get("legal_moves", []) # Extra safety
 
-            # Reconstruct board state
-            bot.board = chess.Board(fen)
-            for move_str in moves:
-                bot.board.push_uci(move_str)
+            if not fen: continue
 
-            # Calculate move
-            best_move = bot.get_best_move(time_ms)
+            # 1. Initialize local board from FEN
+            board = chess.Board(fen)
+            print(f"DEBUG: FEN={fen} Turn={'W' if board.turn else 'B'}", file=sys.stderr)
 
-            # Output move
-            output = {"bestmove": best_move.uci()}
-            print(json.dumps(output))
+            # 2. Search for best move
+            move = engine.search(fen, time_ms)
+
+            # 3. Double-check move legality against python-chess
+            if move not in board.legal_moves:
+                print(f"DEBUG: Search returned illegal {move}, falling back.", file=sys.stderr)
+                move = random.choice(list(board.legal_moves))
+
+            # 4. Final verification against platform's own legal_moves if provided
+            move_uci = move.uci()
+            if platform_legal and move_uci not in platform_legal:
+                print(f"DEBUG: UCI {move_uci} not in platform list. Picking random from platform.", file=sys.stderr)
+                move_uci = random.choice(platform_legal)
+
+            # 5. Output ONLY the JSON
+            sys.stdout.write(json.dumps({"bestmove": move_uci}) + "\n")
             sys.stdout.flush()
+            print(f"DEBUG: Move Sent={move_uci}", file=sys.stderr)
 
-        except Exception:
-            # Fallback in case of parsing/logic errors to prevent crash
-            fallback_board = chess.Board()
-            print(json.dumps({"bestmove": list(fallback_board.legal_moves)[0].uci()}))
-            sys.stdout.flush()
+        except Exception as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            # Last resort fallback to avoid engine crash
+            try:
+                fallback_board = chess.Board(data.get("fen"))
+                move = random.choice(list(fallback_board.legal_moves)).uci()
+                sys.stdout.write(json.dumps({"bestmove": move}) + "\n")
+                sys.stdout.flush()
+            except:
+                pass
 
 if __name__ == "__main__":
     main()

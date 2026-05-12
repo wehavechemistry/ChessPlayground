@@ -38,9 +38,11 @@ OPENING_BOOK: dict[str, list[str]] = {
     "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b": ["e7e5", "e7e6"],
 }
 
+
 def book_move(board: chess.Board) -> chess.Move | None:
     """Return a random opening-book move, or None if not in book."""
     import random
+
     key = " ".join(board.fen().split()[:2])
     candidates = OPENING_BOOK.get(key, [])
     random.shuffle(candidates)
@@ -58,12 +60,12 @@ def book_move(board: chess.Board) -> chess.Move | None:
 # PIECE VALUES  (centipawns)
 # ---------------------------------------------------------------------------
 PIECE_VALUES = {
-    chess.PAWN:   100,
+    chess.PAWN: 100,
     chess.KNIGHT: 320,
     chess.BISHOP: 330,
-    chess.ROOK:   500,
-    chess.QUEEN:  900,
-    chess.KING:   20000,
+    chess.ROOK: 500,
+    chess.QUEEN: 900,
+    chess.KING: 20000,
 }
 
 # ---------------------------------------------------------------------------
@@ -73,22 +75,22 @@ PIECE_VALUES = {
 _PAWN_PST = [
      0,  0,  0,  0,  0,  0,  0,  0,
     50, 50, 50, 50, 50, 50, 50, 50,
-    10, 10, 20, 30, 30, 20, 10, 10,
-     5,  5, 10, 25, 25, 10,  5,  5,
-     0,  0,  0, 20, 20,  0,  0,  0,
+    10, 30, 30, 40, 40, 30, 30, 10,
+     5,  10, 10, 30, 30, 10,10,  5,
+     0,  0, 15, 25, 25,  0,  0,  0,
      5, -5,-10,  0,  0,-10, -5,  5,
      5, 10, 10,-20,-20, 10, 10,  5,
      0,  0,  0,  0,  0,  0,  0,  0,
 ]
 _KNIGHT_PST = [
-    -50,-40,-30,-30,-30,-30,-40,-50,
+    -40,-20,-20,-20,-20,-20,-20,-40,
     -40,-20,  0,  0,  0,  0,-20,-40,
     -30,  0, 10, 15, 15, 10,  0,-30,
     -30,  5, 15, 20, 20, 15,  5,-30,
     -30,  0, 15, 20, 20, 15,  0,-30,
     -30,  5, 10, 15, 15, 10,  5,-30,
     -40,-20,  0,  5,  5,  0,-20,-40,
-    -50,-40,-30,-30,-30,-30,-40,-50,
+    -40,-20,-20,-20,-20,-20,-20,-40,
 ]
 _BISHOP_PST = [
     -20,-10,-10,-10,-10,-10,-10,-20,
@@ -142,6 +144,7 @@ _KING_END_PST = [
 ]
 # fmt: on
 
+
 def _mirror(table: list[int]) -> list[int]:
     """Flip a PST so it can be used for Black (rank mirror)."""
     mirrored = []
@@ -149,14 +152,15 @@ def _mirror(table: list[int]) -> list[int]:
         mirrored.extend(table[rank * 8 : rank * 8 + 8])
     return mirrored
 
+
 # Build lookup: PST[piece_type][color][square]
 PST: dict[int, dict[int, list[int]]] = {}
 for _pt, _tbl in [
-    (chess.PAWN,   _PAWN_PST),
+    (chess.PAWN, _PAWN_PST),
     (chess.KNIGHT, _KNIGHT_PST),
     (chess.BISHOP, _BISHOP_PST),
-    (chess.ROOK,   _ROOK_PST),
-    (chess.QUEEN,  _QUEEN_PST),
+    (chess.ROOK, _ROOK_PST),
+    (chess.QUEEN, _QUEEN_PST),
 ]:
     PST[_pt] = {
         chess.WHITE: _tbl,
@@ -178,10 +182,12 @@ _KING_END = {
 # ---------------------------------------------------------------------------
 ENDGAME_MATERIAL = PIECE_VALUES[chess.ROOK] * 2  # threshold for endgame
 
+
 def _is_endgame(board: chess.Board) -> bool:
     """Rough endgame detection: no queens, or very little material."""
-    queens = len(board.pieces(chess.QUEEN, chess.WHITE)) + \
-             len(board.pieces(chess.QUEEN, chess.BLACK))
+    queens = len(board.pieces(chess.QUEEN, chess.WHITE)) + len(
+        board.pieces(chess.QUEEN, chess.BLACK)
+    )
     if queens == 0:
         return True
     minor_major = sum(
@@ -407,8 +413,12 @@ def negamax(
     if board.is_checkmate():
         return -100_000 - depth  # prefer quicker mates
 
-    if board.is_stalemate() or board.is_insufficient_material() or \
-            board.is_seventyfive_moves() or board.is_fivefold_repetition():
+    if (
+        board.is_stalemate()
+        or board.is_insufficient_material()
+        or board.is_seventyfive_moves()
+        or board.is_fivefold_repetition()
+    ):
         return 0
 
     if depth == 0:
@@ -424,7 +434,7 @@ def negamax(
         score = -negamax(board, depth - 1, -beta, -alpha, deadline)
         board.pop()
         if score >= beta:
-            return beta   # cut-off
+            return beta  # cut-off
         if score > alpha:
             alpha = score
 
