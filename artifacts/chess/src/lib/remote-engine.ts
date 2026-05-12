@@ -13,7 +13,7 @@ export async function requestBotMove(args: {
       moves: args.moves,
       turn: args.turn,
       botFile: args.botFile,
-      timeMs: args.timeMs ?? 2000,
+      timeMs: args.timeMs ?? 1000,
     }),
   });
   if (!res.ok) {

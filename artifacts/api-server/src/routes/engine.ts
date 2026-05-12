@@ -7,7 +7,7 @@ import path from "path";
 const router = Router();
 
 router.post("/move", async (req, res) => {
-  const { fen, moves, turn, timeMs = 2000, botFile } = req.body as {
+  const { fen, moves, turn, timeMs = 1000, botFile } = req.body as {
     fen?: string;
     moves?: string[];
     turn?: "w" | "b";
@@ -54,11 +54,16 @@ router.post("/move", async (req, res) => {
     .moves({ verbose: true })
     .map((m) => m.from + m.to + (m.promotion ?? ""));
 
+  // Provide both `turn` ("w"/"b") and `color` ("white"/"black") so bots
+  // have an unambiguous, human-readable field to check which side they are.
+  const color = turn === "w" ? "white" : "black";
+
   const payload = JSON.stringify({
     fen,
     moves,
     legal_moves: legalMoves,
-    turn,
+    turn,       // "w" or "b"  — matches chess.js / python-chess board.turn
+    color,      // "white" or "black"  — unambiguous human-readable alias
     time_ms: timeMs,
   });
 
@@ -117,7 +122,7 @@ function runBot(botPath: string, payload: string, timeoutMs: number): Promise<st
         return;
       }
       if (code !== 0) {
-        const stderrSnip = stderr.slice(0, 400).trim();
+        const stderrSnip = stderr.slice(0, 500).trim();
         const detail = stderrSnip ? `\n${stderrSnip}` : "";
         settle(() => reject(new Error(`Bot exited with code ${code}${detail}`)));
         return;
@@ -128,7 +133,9 @@ function runBot(botPath: string, payload: string, timeoutMs: number): Promise<st
           settle(() => reject(new Error("Bot produced no output")));
           return;
         }
-        const result = JSON.parse(trimmed) as { bestmove?: string };
+        // Take only the last line — some bots may print debug lines before the JSON
+        const lastLine = trimmed.split("\n").pop()!.trim();
+        const result = JSON.parse(lastLine) as { bestmove?: string };
         if (result.bestmove == null) {
           settle(() => reject(new Error("Bot output missing 'bestmove' field")));
           return;
@@ -136,7 +143,7 @@ function runBot(botPath: string, payload: string, timeoutMs: number): Promise<st
         settle(() => resolve(result.bestmove!));
       } catch {
         settle(() =>
-          reject(new Error(`Bot output is not valid JSON: ${stdout.slice(0, 120)}`))
+          reject(new Error(`Bot output is not valid JSON: ${stdout.slice(0, 200)}`))
         );
       }
     });

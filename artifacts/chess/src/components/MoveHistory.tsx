@@ -36,6 +36,31 @@ export function MoveHistory({
     }
   }, [activePlyIndex, isReviewing, moves.length]);
 
+  // Keyboard navigation: ← → Home End
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Don't steal keys when user is typing in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        onGoPrev();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        onGoNext();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        if (moves.length > 0) onGoToFirst();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        if (moves.length > 0) onGoToLive();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onGoPrev, onGoNext, onGoToFirst, onGoToLive, moves.length]);
+
   const pairs: Array<{ white: Move; whiteIdx: number; black?: Move; blackIdx?: number; num: number }> = [];
   for (let i = 0; i < moves.length; i += 2) {
     pairs.push({ white: moves[i], whiteIdx: i, black: moves[i + 1], blackIdx: i + 1, num: i / 2 + 1 });
@@ -52,16 +77,25 @@ export function MoveHistory({
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           Move History
         </h3>
-        {isReviewing && (
-          <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">
-            Review
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {moves.length > 0 && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {Math.ceil(moves.length / 2)} move{moves.length !== 2 ? "s" : ""}
+            </span>
+          )}
+          {isReviewing && (
+            <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">
+              Review
+            </span>
+          )}
+        </div>
       </div>
 
+      {/* Scrollable move list */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto min-h-0 rounded-md bg-muted/30 h-[160px]"
+        className="overflow-y-auto rounded-md bg-muted/30 h-[200px]"
+        style={{ scrollbarWidth: "thin" }}
       >
         {pairs.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">No moves yet</p>
@@ -99,11 +133,12 @@ export function MoveHistory({
         )}
       </div>
 
+      {/* Navigation buttons */}
       <div className="flex items-center justify-center gap-1 mt-2">
-        <NavBtn icon={<ChevronsLeft size={13} />} title="Start" onClick={onGoToFirst} disabled={!canPrev} />
-        <NavBtn icon={<ChevronLeft size={13} />} title="Previous" onClick={onGoPrev} disabled={!canPrev} />
-        <NavBtn icon={<ChevronRight size={13} />} title="Next" onClick={onGoNext} disabled={!canNext} />
-        <NavBtn icon={<ChevronsRight size={13} />} title="Live" onClick={onGoToLive} disabled={!canNext} />
+        <NavBtn icon={<ChevronsLeft size={13} />} title="Start (Home)" onClick={onGoToFirst} disabled={!canPrev} />
+        <NavBtn icon={<ChevronLeft size={13} />} title="Previous (←)" onClick={onGoPrev} disabled={!canPrev} />
+        <NavBtn icon={<ChevronRight size={13} />} title="Next (→)" onClick={onGoNext} disabled={!canNext} />
+        <NavBtn icon={<ChevronsRight size={13} />} title="Live (End)" onClick={onGoToLive} disabled={!canNext} />
         {isReviewing && (
           <button
             onClick={onGoToLive}
@@ -113,6 +148,13 @@ export function MoveHistory({
           </button>
         )}
       </div>
+
+      {/* Keyboard hint */}
+      {moves.length > 0 && (
+        <p className="text-center text-[10px] text-muted-foreground/40 mt-1 select-none">
+          ← → to step · Home / End to jump
+        </p>
+      )}
     </div>
   );
 }
@@ -130,7 +172,7 @@ function MoveCell({ san, isActive, onClick, ref }: MoveCellProps) {
     <button
       ref={ref}
       onClick={onClick}
-      className={`py-0.5 px-1 text-left font-mono rounded transition-colors w-full ${
+      className={`py-0.5 px-1 text-left font-mono rounded transition-colors w-full text-sm ${
         isActive
           ? "bg-primary/30 text-primary font-semibold"
           : "hover:bg-accent/40 text-foreground"

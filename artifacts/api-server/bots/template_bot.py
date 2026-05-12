@@ -2,8 +2,23 @@
 template_bot.py — Official Chess Playground Bot Template
 
 Protocol (JSON over stdin/stdout):
-  stdin:  {"fen": "...", "moves": [...], "legal_moves": [...], "turn": "w"|"b", "time_ms": 2000}
+  stdin:  {"fen": "...", "moves": [...], "legal_moves": [...],
+           "turn": "w"|"b", "color": "white"|"black", "time_ms": 1000}
   stdout: {"bestmove": "e2e4"}   (UCI move string, e.g. "e7e8q" for promotion)
+
+Key protocol fields
+-------------------
+  legal_moves — ALREADY FILTERED for the side to move by the server.
+                Always pick from this list to avoid illegal-move errors.
+                This is the safest approach and avoids color-confusion bugs.
+
+  turn        — "w" or "b"  (same as python-chess board.turn: chess.WHITE/chess.BLACK)
+  color       — "white" or "black"  — unambiguous human-readable alias.
+                Use this if you find "w"/"b" confusing.
+
+  fen         — current board position (FEN).  board.turn already encodes the side.
+  time_ms     — your thinking budget in ms. Return before this expires.
+  moves       — full game move history in UCI format (useful for opening books).
 
 Requirements:
   pip install chess
@@ -22,7 +37,6 @@ import math
 # ── Optional: python-chess ─────────────────────────────────────────────────────
 try:
     import chess
-    import chess.polyglot
     HAS_CHESS = True
 except ImportError:
     HAS_CHESS = False
@@ -40,8 +54,13 @@ def main() -> None:
         _fatal(f"Failed to parse input JSON: {exc}")
 
     fen: str = data.get("fen", "")
-    legal_moves: list[str] = data.get("legal_moves", [])
-    time_ms: int = data.get("time_ms", 2000)
+    legal_moves: list[str] = data.get("legal_moves", [])  # already for side to move
+    time_ms: int = data.get("time_ms", 1000)
+
+    # NOTE: use data["color"] ("white"/"black") or data["turn"] ("w"/"b")
+    # to know which side you are playing. Both refer to the same thing.
+    # color: str = data.get("color", "white")   # "white" or "black"
+    # turn:  str = data.get("turn",  "w")        # "w" or "b"
 
     if not legal_moves:
         _respond("")
@@ -62,7 +81,8 @@ def search(fen: str, legal_moves: list[str], time_ms: int) -> str:
     Parameters
     ----------
     fen        : current position in FEN notation
-    legal_moves: list of all legal moves in UCI format (provided by the server)
+    legal_moves: list of all legal moves in UCI format (provided by the server,
+                 already filtered for the side to move — safe to pick from directly)
     time_ms    : suggested thinking time in milliseconds
 
     The simplest possible engine just picks randomly.  Replace this with
@@ -73,10 +93,12 @@ def search(fen: str, legal_moves: list[str], time_ms: int) -> str:
         return random.choice(legal_moves)
 
     board = chess.Board(fen)
+    # board.turn == chess.WHITE  when it's white's turn
+    # board.turn == chess.BLACK  when it's black's turn
 
     # Example: one-ply material evaluation
     best_score = -math.inf
-    best_move = None
+    best_move: "chess.Move | None" = None
     deadline = time.monotonic() + time_ms / 1000.0
 
     moves = list(board.legal_moves)
@@ -120,24 +142,6 @@ def material(board: "chess.Board") -> int:
         score += value * len(board.pieces(piece_type, board.turn))
         score -= value * len(board.pieces(piece_type, not board.turn))
     return score
-
-
-def move_order_key(board: "chess.Board", move: "chess.Move") -> int:
-    """Simple move-ordering: captures first, then checks, then quiet moves."""
-    if board.is_capture(move):
-        victim = board.piece_at(move.to_square)
-        attacker = board.piece_at(move.from_square)
-        v = PIECE_VALUES.get(victim.piece_type, 0) if victim else 0
-        a = PIECE_VALUES.get(attacker.piece_type, 100) if attacker else 100
-        return -(v - a // 10 + 1000)
-    board.push(move)
-    is_check = board.is_check()
-    board.pop()
-    return -500 if is_check else 0
-
-
-def is_game_over(board: "chess.Board") -> bool:
-    return board.is_game_over(claim_draw=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

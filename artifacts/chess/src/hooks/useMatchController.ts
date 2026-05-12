@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useChessGame } from "./useChessGame";
 import type { MatchConfig, EngineLog } from "@/lib/engine-types";
+import { DEFAULT_MATCH_CONFIG } from "@/lib/engine-types";
 import { requestBotMove } from "@/lib/remote-engine";
 import type { Square } from "@/lib/chess-engine";
 
@@ -9,12 +10,7 @@ export { type MatchConfig };
 export function useMatchController() {
   const game = useChessGame();
 
-  const [config, setConfig] = useState<MatchConfig>({
-    white: "human",
-    black: "human",
-    whiteBotFile: "random_bot",
-    blackBotFile: "random_bot",
-  });
+  const [config, setConfig] = useState<MatchConfig>(DEFAULT_MATCH_CONFIG);
   const [isBotThinking, setIsBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
   const [engineLogs, setEngineLogs] = useState<EngineLog[]>([]);
@@ -37,7 +33,7 @@ export function useMatchController() {
       minute: "2-digit",
       second: "2-digit",
     });
-    setEngineLogs((prev) => [...prev.slice(-49), { ...entry, id, time }]);
+    setEngineLogs((prev) => [...prev.slice(-99), { ...entry, id, time }]);
   }, []);
 
   useEffect(() => {
@@ -53,6 +49,9 @@ export function useMatchController() {
       game.turn === "w" ? currentConfig.whiteBotFile : currentConfig.blackBotFile;
     if (!botFile) return;
 
+    const timeMs =
+      game.turn === "w" ? currentConfig.timeMsWhite : currentConfig.timeMsBlack;
+
     const side = game.turn;
     const sideName = side === "w" ? "White" : "Black";
 
@@ -60,13 +59,13 @@ export function useMatchController() {
     setIsBotThinking(true);
     setBotError(null);
 
-    addLog({ side, type: "start", message: `${sideName} thinking (${botFile})…` });
+    addLog({ side, type: "start", message: `${sideName} thinking (${botFile}, ${timeMs}ms)…` });
 
     const moves = game.moveHistory.map(
       (m) => m.from + m.to + (m.promotion ?? "")
     );
 
-    requestBotMove({ fen: game.fen, moves, turn: game.turn, botFile })
+    requestBotMove({ fen: game.fen, moves, turn: game.turn, botFile, timeMs })
       .then((bestmove) => {
         if (!bestmove) {
           addLog({ side, type: "move", message: `${sideName} has no legal moves` });
@@ -88,9 +87,6 @@ export function useMatchController() {
       .finally(() => {
         isBotThinkingRef.current = false;
         setIsBotThinking(false);
-        // Increment trigger so the effect re-fires after the ref clears.
-        // This prevents bot-vs-bot stalling when fen/turn already changed
-        // while isBotThinkingRef was still true.
         setBotTrigger((t) => t + 1);
       });
   }, [
