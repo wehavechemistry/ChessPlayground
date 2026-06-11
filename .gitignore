@@ -11,6 +11,12 @@ out-tsc
 # dependencies
 node_modules
 
+.local/
+.agents/
+.skills/
+.config/
+pnpm-lock.yaml
+uv.lock
 # IDEs and editors
 /.idea
 .project
